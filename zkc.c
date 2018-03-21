@@ -95,9 +95,9 @@ int check_params(void)
   if (!*g_appInfo.conf) {
     fprintf(stderr,"no config file given!\n");
     help();
-  } else if (access(g_appInfo.conf,F_OK|R_OK|W_OK)) {
-    fprintf(stderr,"can't access config file '%s'\n",g_appInfo.conf);
-    return -1;
+  } else if (!access(g_appInfo.conf,F_OK|R_OK|W_OK)) {
+    fprintf(stderr,"warning: the config file '%s' will be overwirtten!\n",g_appInfo.conf);
+    return 0;
   }
 
   return 0;
