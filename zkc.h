@@ -8,7 +8,10 @@
 
 
 typedef struct zkc_info {
-  /* 0: normal, 1: create znode struct, 2: clear znode struct */
+  /* 0: normal, 
+   * 1: create znode struct, 
+   * 2: clear znode struct, 
+   * 3: upload configs to znode only */
   int mode ;
 
   /* entry point in zookeeper */
@@ -22,7 +25,10 @@ typedef struct zkc_info {
 
   char ipAddr[64];
 
+  /* the '/master' znode */
   char masterNode[PATH_MAX];
+
+  /* the '/conf' znode */
   char confNode[PATH_MAX];
 
   /* zookeeper handle */
@@ -40,15 +46,15 @@ typedef struct zkc_info {
 
 extern int init_zkc_ha(void);
 
-extern int init_zkc_create(void);
-
-extern int init_zkc_release(void);
+extern int init_zkc_maintainance(bool isCreate);
 
 extern int zkc_ha_process(void);
 
 extern int zkc_create_znode(void);
 
 extern int zkc_release_znode(void);
+
+extern int zkc_upload_config(void);
 
 #endif /* __ZKC_H__*/
 
