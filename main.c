@@ -37,8 +37,8 @@ void help(char **argv)
 "upload configs only:\n"
 "%s -L app -c ./app/app.cfg -H 1.2.3.4:2181\n\n"
 "fetch configs only:\n"
-"%s -L app -H 1.2.3.4:2181\n\n"
-"fetch master info only:\n"
+"%s -F app -H 1.2.3.4:2181\n\n"
+"fetch master info:\n"
 "%s -M app -H 1.2.3.4:2181\n\n",
   argv[0],argv[0],argv[0],argv[0],argv[0],argv[0],argv[0]
   );
