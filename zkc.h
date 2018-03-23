@@ -11,7 +11,10 @@ typedef struct zkc_info {
   /* 0: normal, 
    * 1: create znode struct, 
    * 2: clear znode struct, 
-   * 3: upload configs to znode only */
+   * 3: upload configs to znode only 
+   * 4: fetch config from znode 
+   * 5: fetch master address from znode 
+   */
   int mode ;
 
   /* entry point in zookeeper */
@@ -40,6 +43,9 @@ typedef struct zkc_info {
 
   int res_code ;
 
+  /* child's pid if invoking HA process */
+  pid_t p_child ;
+
 } zkcInfo ;
 
 
@@ -55,6 +61,10 @@ extern int zkc_create_znode(void);
 extern int zkc_release_znode(void);
 
 extern int zkc_upload_config(void);
+
+extern int zkc_fetch_config(void);
+
+extern int zkc_fetch_master_addr(void) ;
 
 #endif /* __ZKC_H__*/
 

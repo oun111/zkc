@@ -146,7 +146,8 @@ int flush_configs(const char *value, int value_len)
   int fd = open(g_zkcInfo.conf,O_CREAT|O_WRONLY|O_NONBLOCK,S_IRWXU);
 
   if (fd<0)  {
-    fprintf(stderr,"error open config file '%s'\n",g_zkcInfo.conf);
+    fprintf(stderr,"%s: error open config file '%s'\n",
+        __func__,g_zkcInfo.conf);
     return -1;
   }
 
@@ -172,11 +173,13 @@ void get_complete(int rc, const char *value, int value_len,
 #endif
 
   /* get the 'conf' node ok */
-  if (is_conf_node((char*)data)) {
+  if (is_conf_node((char*)data) || is_master_node((char*)data)) {
 
     /* write to config file by global znode configs */
-    if (rc==ZOK && value_len>0) 
-      flush_configs(value,value_len);
+    if (rc==ZOK && value_len>0) {
+      if (*g_zkcInfo.conf) flush_configs(value,value_len);
+      else fprintf(stderr,"%s",value);
+    }
 
     __sync_lock_test_and_set(&g_zkcInfo.res_code,rc);
 
@@ -247,6 +250,8 @@ int init_zkc_ha(void)
   snprintf(g_zkcInfo.confNode,PATH_MAX,"/%s/conf",g_zkcInfo.entry);
   snprintf(g_zkcInfo.masterNode,PATH_MAX,"/%s/master",g_zkcInfo.entry);
 
+  zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
+
   /* init the zookeeper client handle */
   g_zkcInfo.zh = zookeeper_init(g_zkcInfo.zkhosts, watcher, 30000, 0, 0, 0);
   if (!g_zkcInfo.zh) {
@@ -274,6 +279,8 @@ int run_app(void)
 
   } else {
     int wstatus = 0;
+
+    g_zkcInfo.p_child = p ;
 
     wait(&wstatus);
 
@@ -329,6 +336,20 @@ int add_znode(char *zpath, char *value, size_t szVal, int flags)
   return get_result_code() ;
 }
 
+int get_znode(char *zpath)
+{
+  int ret = zoo_aget(g_zkcInfo.zh,zpath,1,get_complete,
+      strdup(zpath));
+  if (ret) {
+    fprintf(stderr,"error get '%s': %s\n",zpath,zerror(ret));
+    return -1;
+  }
+
+  sem_wait(&g_zkcInfo.s);
+
+  return get_result_code() ;
+}
+
 /* the main zookeeper client process */
 int zkc_ha_process(void)
 {
@@ -339,29 +360,15 @@ int zkc_ha_process(void)
   for (;;) {
 
     /*
-     * the loop that creates /$appname/master znode and 
-     *  get global configs
+     * the loop that creates /$appname/master znode 
      */
     while (1) {
 
       /* 
        * create the $appname/master 
        */
-#if 0
-      ret = zoo_acreate(g_zkcInfo.zh, pMastNode, g_zkcInfo.ipAddr, 
-        strlen(g_zkcInfo.ipAddr), &ZOO_OPEN_ACL_UNSAFE, ZOO_EPHEMERAL,
-        create_complete, strdup(pMastNode));
-      if (ret) {
-        fprintf(stderr,"error create '%s': %s\n",pMastNode,
-            zerror(ret));
-        return -1;
-      }
-
-      sem_wait(&g_zkcInfo.s);
-#else
       ret = add_znode((char*)pMastNode,g_zkcInfo.ipAddr, strlen(g_zkcInfo.ipAddr),
           ZOO_EPHEMERAL);
-#endif
 
       if (ret==ZOK) {
         fprintf(stderr,"\ncreate '%s' ok\n",pMastNode);
@@ -395,16 +402,7 @@ int zkc_ha_process(void)
     } // end while
 
     /* read config */
-    ret = zoo_aget(g_zkcInfo.zh,pConfNode,1,get_complete,
-        strdup(pConfNode));
-    if (ret) {
-      fprintf(stderr,"error get '%s': %s\n",pConfNode,zerror(ret));
-      return -1;
-    }
-
-    sem_wait(&g_zkcInfo.s);
-
-    ret = get_result_code() ;
+    ret = get_znode((char*)pConfNode) ;
     if (ret!=ZOK) {
       fprintf(stderr,"get '%s' fail: %s\n",pConfNode,zerror(ret));
       return -1;
@@ -463,6 +461,8 @@ int init_zkc_maintainance(bool isCreate)
     return -1;
   }
 
+  zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
+
   /* init the zookeeper client handle */
   g_zkcInfo.zh = zookeeper_init(g_zkcInfo.zkhosts, watcher, 30000, 0, 0, 0);
   if (!g_zkcInfo.zh) {
@@ -471,6 +471,7 @@ int init_zkc_maintainance(bool isCreate)
   }
 
   snprintf(g_zkcInfo.confNode,PATH_MAX,"/%s/conf",g_zkcInfo.entry);
+  snprintf(g_zkcInfo.masterNode,PATH_MAX,"/%s/master",g_zkcInfo.entry);
 
   return 0;
 }
@@ -520,19 +521,7 @@ int zkc_create_znode(void)
     /* 
      * create the /$appname znode
      */
-#if 0
-    ret = zoo_acreate(g_zkcInfo.zh, zpath, "new", 
-      3, &ZOO_OPEN_ACL_UNSAFE, 0,
-      create_complete, strdup(zpath));
-    if (ret) {
-      fprintf(stderr,"error create '%s': %s\n",zpath,zerror(ret));
-      return -1;
-    }
-
-    sem_wait(&g_zkcInfo.s);
-#else
     ret = add_znode(zpath,"new",3,0);
-#endif
 
     if (ret!=ZOK && ret!=ZNODEEXISTS) {
       fprintf(stderr,"\ncreate '%s' fail: %s\n",
@@ -601,6 +590,34 @@ int zkc_upload_config(void)
 
   if (!upload_configs(zpath))
     fprintf(stderr,"upload config done\n");
+
+  return 0;
+}
+
+
+int zkc_fetch_config(void)
+{
+  const char *pConfNode = g_zkcInfo.confNode ;
+  int ret = get_znode((char*)pConfNode);
+
+  if (ret) {
+    fprintf(stderr,"get config error: %s\n",zerror(ret));
+    return -1;
+  }
+
+  return 0;
+}
+
+
+int zkc_fetch_master_addr(void)
+{
+  const char *pNode = g_zkcInfo.masterNode ;
+  int ret = get_znode((char*)pNode);
+
+  if (ret) {
+    fprintf(stderr,"get master address error: %s\n",zerror(ret));
+    return -1;
+  }
 
   return 0;
 }
